@@ -1,0 +1,9 @@
+{
+  "name": "GIT Capital Projects",
+  "short_name": "GIT Projects",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F6F9",
+  "theme_color": "#1B3358",
+  "icons": []
+}

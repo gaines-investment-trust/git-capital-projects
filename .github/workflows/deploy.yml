@@ -1,0 +1,72 @@
+name: test-and-deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # GitHub OIDC -> Azure, no stored Azure passwords
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gcp
+          POSTGRES_PASSWORD: gcp
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U gcp" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+        env:
+          TEST_DATABASE_URL: postgres://gcp:gcp@localhost:5432/gcp_test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && vars.AZURE_RESOURCE_GROUP != ''
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_DEPLOY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Compile and validate the infrastructure template
+        run: az bicep build -f infra/main.bicep --stdout > /dev/null
+      - name: Build image in Azure Container Registry
+        run: az acr build -r "${{ vars.AZURE_ACR_NAME }}" -t "git-capital-projects:${{ github.sha }}" -t "git-capital-projects:latest" .
+      - name: Apply infrastructure with the new image
+        run: |
+          KV=$(az keyvault list -g "${{ vars.AZURE_RESOURCE_GROUP }}" --query "[0].name" -o tsv)
+          DBPASS=$(az keyvault secret show --vault-name "$KV" -n db-admin-password --query value -o tsv 2>/dev/null || true)
+          AUTHSEC=$(az keyvault secret show --vault-name "$KV" -n auth-secret --query value -o tsv 2>/dev/null || true)
+          echo "::add-mask::$DBPASS"; echo "::add-mask::$AUTHSEC"
+          az deployment group create -g "${{ vars.AZURE_RESOURCE_GROUP }}" -f infra/main.bicep \
+            -p envName=prod adminObjectId="${{ vars.AZURE_ADMIN_OBJECT_ID }}" \
+               image="${{ vars.AZURE_ACR_NAME }}.azurecr.io/git-capital-projects:${{ github.sha }}" dbPassword="$DBPASS" authSecret="$AUTHSEC" \
+            --query properties.outputs -o json
+      - name: Run database migrations
+        run: |
+          az containerapp job start -g "${{ vars.AZURE_RESOURCE_GROUP }}" -n gitcpp-prod-migrate
+          for i in $(seq 1 60); do
+            s=$(az containerapp job execution list -g "${{ vars.AZURE_RESOURCE_GROUP }}" -n gitcpp-prod-migrate --query "[0].properties.status" -o tsv)
+            echo "migration: $s"; [ "$s" = "Succeeded" ] && exit 0; [ "$s" = "Failed" ] && exit 1; sleep 10
+          done; exit 1
+      - name: Smoke check
+        run: |
+          url=$(az containerapp show -g "${{ vars.AZURE_RESOURCE_GROUP }}" -n gitcpp-prod-web --query properties.configuration.ingress.fqdn -o tsv)
+          for i in $(seq 1 30); do curl -fsS "https://$url/api/health" && exit 0; sleep 10; done; exit 1
