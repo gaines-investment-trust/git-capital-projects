@@ -18,7 +18,17 @@ Gaines Investment Trust's internal platform for capital, deferred-maintenance, l
 - Append-only audit log.
 - Database-level overbilling and payment-gate controls.
 
-Next: sprint 2 (portfolio Gantt, schedules, budgets UI, Excel import and export, PWA), then the RFP, bidding, contract and payment modules.
+**Sprint 2 complete:**
+- Schedule editing. Any slip needs a written reason and is logged.
+- Finish-to-start task links: later tasks move to follow a slipped task, and each move is logged.
+- Schedule baselines.
+- Automatic project health: late, or at risk against the baseline.
+- Budget split across cost codes, locked from the contract stage on.
+- Portfolio views: Grid, Board by stage and Gantt with baseline.
+- Excel export of the portfolio and of each project budget.
+- Installable app: manifest, icon, service worker and offline page.
+
+Next: sprint 3, the RFP builder, vendor directory and vendor portal, and sending RFPs from Outlook. After that come bid leveling, contracts, and payments with lien releases.
 
 ## Layout
 

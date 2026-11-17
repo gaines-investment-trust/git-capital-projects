@@ -5,6 +5,9 @@ import { myOpenApprovals } from "@/services/approvals";
 import { DOC_TYPES } from "@/lib/naming";
 import { Shell, money } from "../../shell";
 import { UploadForm } from "./upload";
+import { ScheduleTable, BudgetCell, type TaskRow } from "./editors";
+import { scheduleChanges } from "@/services/schedule";
+import { saveBaselineAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 const d = (v: any) => (v ? new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "—");
@@ -16,7 +19,9 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const data = await getProjectByCode(actor, code);
   if (!data) notFound();
   const { project: p, budget, schedule, decisions, documents } = data;
-  const approvals = await myOpenApprovals(actor.userId);
+  const [approvals, changes] = await Promise.all([myOpenApprovals(actor.userId), scheduleChanges(p.id)]);
+  const canEdit = actor.can("project.edit");
+  const budgetOpen = canEdit && p.stage_order < 5;
   const tot = (k: string) => budget.reduce((a: number, b: any) => a + Number(b[k] ?? 0), 0);
 
   return (
@@ -43,22 +48,29 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           <thead><tr><th>Cost code</th><th>Yardi GL / job</th><th className="num">Original</th><th className="num">Approved chg</th><th className="num">Revised</th><th className="num">Committed</th><th className="num">Pending</th><th className="num">Invoiced</th><th className="num">Paid</th><th className="num">Retainage</th><th className="num">Forecast</th><th className="num">Variance</th></tr></thead>
           <tbody>{budget.map((b: any) => (
             <tr key={b.id}><td>{b.code} {b.cost_name}</td><td className="muted">{b.yardi_gl_account ?? "—"} / {b.yardi_job_code ?? "—"}</td>
-              <td className="num">{money(b.original_budget)}</td><td className="num">{money(b.approved_changes)}</td><td className="num">{money(b.revised_budget)}</td>
+              <td className="num">{budgetOpen ? <BudgetCell lineId={b.id} value={Number(b.original_budget)} projectCode={p.project_code} /> : money(b.original_budget)}</td><td className="num">{money(b.approved_changes)}</td><td className="num">{money(b.revised_budget)}</td>
               <td className="num">{money(b.committed)}</td><td className="num">{money(b.pending_changes)}</td><td className="num">{money(b.invoiced)}</td><td className="num">{money(b.paid)}</td>
               <td className="num">{money(b.retainage_held)}</td><td className="num">{money(b.forecast)}</td><td className="num" style={{ color: Number(b.variance) > 0 ? "#A3271B" : undefined }}>{money(b.variance)}</td></tr>
           ))}</tbody>
         </table></div>
-        <div className="small muted">Committed, invoiced and paid are calculated from contracts, change orders and pay requests (sprints 4–5).</div>
+        <div className="row small muted" style={{ marginTop: 8 }}>
+          <span>{budgetOpen ? "Split the budget across cost codes until the contract stage; after that, use change orders or contingency." : "Budget is locked at this stage: use change orders or contingency."} Committed, invoiced and paid are calculated from contracts, change orders and pay requests.</span>
+          <a className="btn" href={`/api/export/budget/${p.project_code}`}>Export to Excel</a>
+        </div>
       </section>
 
       <section className="card">
-        <h2>Schedule</h2>
-        <table><thead><tr><th>Task</th><th>Start</th><th>End</th><th>Flags</th><th className="num">% done</th></tr></thead>
-          <tbody>{schedule.map((t: any) => (
-            <tr key={t.id}><td>{t.kind === "milestone" ? "◆ " : ""}{t.name}</td><td>{d(t.start_date)}</td><td>{d(t.end_date)}</td>
-              <td className="small">{[t.is_payment_milestone && "payment milestone", t.is_inspection_hold_point && "inspection hold point"].filter(Boolean).join(" · ")}</td>
-              <td className="num">{Number(t.percent_complete)}%</td></tr>
-          ))}</tbody></table>
+        <div className="spread"><h2>Schedule</h2>
+          {canEdit && <form action={saveBaselineAction}><input type="hidden" name="projectId" value={p.id} /><input type="hidden" name="projectCode" value={p.project_code} />
+            <button className="btn">{p.baseline_end ? "Re-save baseline" : "Save baseline"}</button></form>}
+        </div>
+        <div className="small muted" style={{ marginBottom: 8 }}>{p.baseline_end ? `Baseline end ${d(p.baseline_end)}; current end ${d(p.planned_end)}.` : "No baseline yet. Save it at contract award; later slips are measured against it."}</div>
+        <ScheduleTable tasks={schedule as TaskRow[]} projectCode={p.project_code} canEdit={canEdit} />
+        {changes.length > 0 && (
+          <details style={{ marginTop: 10 }}><summary className="small">Date changes ({changes.length})</summary>
+            {changes.map((c: any) => <div key={c.id} className="small" style={{ padding: "4px 0" }}>{c.task_name}: {d(c.old_end)} → {d(c.new_end)} · “{c.reason}” · {c.by_name}</div>)}
+          </details>
+        )}
       </section>
 
       <section className="card">

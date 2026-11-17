@@ -85,6 +85,7 @@ export async function createProject(actor: Actor, raw: unknown) {
     // Default schedule from the type template, laid end to end from the planned start.
     const steps: ScheduleStep[] = type.default_schedule ?? [];
     let cursor = input.plannedStart ? new Date(input.plannedStart) : new Date();
+    let prevTaskId: string | null = null;
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       const days = s.kind === "milestone" ? 0 : s.days ?? 5;
@@ -94,6 +95,10 @@ export async function createProject(actor: Actor, raw: unknown) {
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [p.id, s.name, s.kind ?? "task", cursor.toISOString().slice(0, 10), end.toISOString().slice(0, 10), days, !!s.payment, !!s.hold, i],
       );
+      const taskId: string = (await c.query(`select id from schedule_task where project_id = $1 and sort_order = $2`, [p.id, i])).rows[0].id;
+      // Template steps run in order: each finishes before the next starts (FS). PMs can relink later.
+      if (prevTaskId) await c.query(`insert into task_dependency (predecessor_id, successor_id, kind) values ($1,$2,'FS')`, [prevTaskId, taskId]);
+      prevTaskId = taskId;
       cursor = addDays(end, days === 0 ? 0 : 1);
     }
 
@@ -128,7 +133,7 @@ export async function portfolio(actor: Actor): Promise<PortfolioRow[]> {
             t.name type_name, s.name stage_name, s.sort_order stage_order, u.display_name manager, p.health,
             coalesce(sum(b.revised_budget), p.budget_amount, 0) budget, coalesce(sum(b.committed),0) committed,
             coalesce(sum(b.invoiced),0) invoiced, coalesce(sum(b.paid),0) paid, coalesce(sum(b.forecast), p.budget_amount, 0) forecast,
-            p.planned_start, p.planned_end
+            p.planned_start, p.planned_end, p.baseline_start, p.baseline_end
        from project p
        join property pr on pr.id = p.property_id
        join project_type t on t.id = p.project_type_id
@@ -145,7 +150,7 @@ export async function portfolio(actor: Actor): Promise<PortfolioRow[]> {
 export async function getProjectByCode(actor: Actor, code: string) {
   const p = await one<any>(
     `select p.*, pr.code property_code, pr.name property_name, pr.state, pr.region_id, t.name type_name, t.code type_code,
-            s.name stage_name, u.display_name manager
+            s.name stage_name, s.sort_order stage_order, u.display_name manager
        from project p join property pr on pr.id = p.property_id join project_type t on t.id = p.project_type_id
        join stage s on s.id = p.stage_id join app_user u on u.id = p.manager_user_id
       where p.project_code = $1`,

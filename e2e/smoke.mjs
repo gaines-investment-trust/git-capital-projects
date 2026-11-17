@@ -11,7 +11,7 @@ const page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
 const problems = [];
 page.on("console", (m) => { if (m.type() === "error" && !/404|favicon|DevTools/.test(m.text())) problems.push(m.text()); });
 page.on("pageerror", (e) => problems.push(String(e)));
-const shot = (n) => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
+const shot = (n) => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true, caret: "initial" });
 const step = (s) => console.log("•", s);
 
 step("sign in");
@@ -59,10 +59,35 @@ await page.getByRole("button", { name: "Upload and file" }).click();
 await page.getByText("Filed as TUS-26-001_Bid_BrandpointRoofing_2026-11-20_v1.pdf").waitFor({ timeout: 20000 });
 await shot("4-filed");
 
+step("slip a task: reason required and logged");
+await page.goto(`${BASE}/projects/TUS-26-001`);
+const row = page.locator("tr", { hasText: "Tear-off and install" });
+await row.getByRole("button", { name: "Update" }).click();
+const endInput = page.locator('input[name="endDate"]');
+const oldEnd = await endInput.inputValue();
+const newEnd = new Date(Date.parse(oldEnd) + 7 * 86400000).toISOString().slice(0, 10);
+await endInput.fill(newEnd);
+await page.getByLabel(/Reason for the 7-day slip/).fill("Rain Dec 15-19");
+await page.locator('form:has(input[name="endDate"])').getByRole("button", { name: "Save" }).click();
+await page.getByText("7-day slip logged").waitFor();
+await page.getByText(/later tasks? moved to follow it/).waitFor();
+await page.getByText(/Date changes \([2-9]\d*\)/).waitFor();
+await shot("4b-slip");
+
+step("Excel export downloads");
+const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("link", { name: "Export to Excel" }).click()]);
+if (!dl.suggestedFilename().startsWith("TUS-26-001_Budget_GIT_")) throw new Error("bad export name " + dl.suggestedFilename());
+
 step("home shows the project");
 await page.goto(`${BASE}/`);
 await page.getByRole("link", { name: "TUS-26-001" }).waitFor();
 await shot("5-home");
+await page.goto(`${BASE}/?view=board`);
+await page.getByText("Planning · 1").waitFor();
+await shot("5b-board");
+await page.goto(`${BASE}/?view=gantt`);
+await page.getByText("Dashed outline = baseline").waitFor();
+await shot("5c-gantt");
 
 step("people page");
 await page.goto(`${BASE}/admin/people`);

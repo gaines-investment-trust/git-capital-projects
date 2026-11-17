@@ -3,12 +3,14 @@ import { requireActor } from "@/auth";
 import { portfolio } from "@/services/projects";
 import { myOpenApprovals } from "@/services/approvals";
 import { Shell, money } from "./shell";
+import { ViewTabs, Board, Gantt } from "./views";
 
 export const dynamic = "force-dynamic";
 
 const HEALTH: Record<string, string> = { on_track: "On track", at_risk: "At risk", late: "Late", blocked: "Blocked" };
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const view = ((await searchParams).view ?? "grid") as string;
   const actor = await requireActor();
   const [rows, approvals] = await Promise.all([portfolio(actor), myOpenApprovals(actor.userId)]);
   const sum = (k: "budget" | "committed" | "invoiced" | "paid" | "forecast") => rows.reduce((a, r) => a + Number(r[k]), 0);
@@ -47,8 +49,8 @@ export default async function Home() {
       </section>
 
       <section className="card">
-        <h2>All projects</h2>
-        {rows.length === 0 ? (
+        <div className="spread" style={{ marginBottom: 10 }}><h2 style={{ margin: 0 }}>All projects</h2><ViewTabs view={view} /></div>
+        {rows.length > 0 && view === "board" ? <Board rows={rows} /> : rows.length > 0 && view === "gantt" ? <Gantt rows={rows as any} /> : rows.length === 0 ? (
           <div className="notice info">No projects yet. {actor.can("project.create") ? <Link href="/projects/new">Create the first one</Link> : "Projects you're assigned to will appear here."}</div>
         ) : (
           <div className="scroll"><table>

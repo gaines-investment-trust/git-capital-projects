@@ -105,3 +105,34 @@ export async function uploadDocumentAction(_: FormState, fd: FormData): Promise<
     return { error: msg(e) };
   }
 }
+
+import { updateTask, saveBaseline } from "@/services/schedule";
+import { setOriginalBudget } from "@/services/budget";
+
+export async function updateTaskAction(_: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor();
+  try {
+    const r = await updateTask(actor, Object.fromEntries(fd));
+    revalidatePath(`/projects/${fd.get("projectCode")}`);
+    return { ok: (r.slipDays > 0 ? `Saved. ${r.slipDays}-day slip logged.` : "Saved.") + (r.movedTasks ? ` ${r.movedTasks} later task${r.movedTasks === 1 ? "" : "s"} moved to follow it.` : "") };
+  } catch (e) {
+    return { error: msg(e) };
+  }
+}
+
+export async function saveBaselineAction(fd: FormData) {
+  const actor = await requireActor();
+  await saveBaseline(actor, String(fd.get("projectId")));
+  revalidatePath(`/projects/${fd.get("projectCode")}`);
+}
+
+export async function setBudgetAction(_: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor();
+  try {
+    const r = await setOriginalBudget(actor, Object.fromEntries(fd));
+    revalidatePath(`/projects/${fd.get("projectCode")}`);
+    return { ok: `Saved. Project budget is now ${r.projectTotal.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}.` };
+  } catch (e) {
+    return { error: msg(e) };
+  }
+}
