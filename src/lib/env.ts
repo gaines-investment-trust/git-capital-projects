@@ -29,6 +29,17 @@ const schema = z.object({
   SP_DRIVE_ID: z.string().optional(),
   SP_ROOT_ITEM_ID: z.string().optional(),
 
+  // DocuSign eSignature (JWT grant). Private key and Connect HMAC key come from Key Vault.
+  DOCUSIGN_INTEGRATION_KEY: z.string().optional(),
+  DOCUSIGN_USER_ID: z.string().optional(),
+  DOCUSIGN_ACCOUNT_ID: z.string().optional(),
+  /** e.g. https://demo.docusign.net (developer) or https://na3.docusign.net (production) */
+  DOCUSIGN_BASE_URI: z.string().url().optional(),
+  /** account-d.docusign.com (developer) or account.docusign.com (production) */
+  DOCUSIGN_AUTH_SERVER: z.string().default("account-d.docusign.com"),
+  DOCUSIGN_PRIVATE_KEY: z.string().optional(),
+  DOCUSIGN_CONNECT_HMAC_KEY: z.string().optional(),
+
   APP_BASE_URL: z.string().default("http://localhost:3000"),
 });
 

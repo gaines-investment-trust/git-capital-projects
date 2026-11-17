@@ -76,6 +76,8 @@ Gaines Investment Trust's internal platform for capital, deferred-maintenance, l
 - Vendors: W-9 upload (PDF), filed under `00 Portfolio/Vendors/{Vendor}`.
 - File names and date checks use the California calendar date, not UTC.
 
+- DocuSign: contracts go out for signature (vendor, then GIT), progress tracked through Connect, the signed PDF with certificate filed automatically and the contract executed; declines return to draft with the reason; pull-back voids the envelope. Switches on once the private key and Connect key are in Key Vault (docs/SETUP.md).
+
 Next: sprint 5, pay requests with the payment gate, lien releases, and change orders.
 
 ## Layout

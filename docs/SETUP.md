@@ -43,6 +43,31 @@ Owner: Joe Gerber (COO). Built and supported by Claude under Joe's direction.
 7. Push to `main`. The pipeline tests, builds the image in Azure, applies the template with the new image, runs migrations and checks `/api/health`.
 8. Open `appUrl` and sign in with Microsoft. The first sign-in by joeg@ becomes Executive + Admin. Add properties, then people.
 
+## DocuSign (developer account; IDs are already in infra/main.bicep)
+
+Integration key `321cc404-…4a49`, API user `1e044bae-…298a`, account `4cbbfba6-…7e71`, base URI `https://demo.docusign.net`.
+The app signs in to DocuSign as that API user (JWT grant), sends each contract with the vendor signing first and then
+GIT's signatory (setting `contract.signatory`, default Jeff Gaines), and copies the sending PM.
+
+1. **Redirect URIs** (DocuSign › Settings › Apps and Keys › the integration key): add `https://www.docusign.com` now, and
+   `https://<appUrl>/api/docusign/consent` after the first deployment.
+2. **One-time consent**, signed in to DocuSign as the API user (open this link):
+   `https://account-d.docusign.com/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=321cc404-3d85-4cdb-ad2c-bb217e464a49&redirect_uri=https%3A%2F%2Fwww.docusign.com`
+   Click **Allow**. It lands on docusign.com; that's the end of it.
+3. **RSA key**: on the integration key, use the existing RSA pair or *Add RSA Keypair*. Save the private key to a file
+   (it is shown once), then put it in Key Vault and delete the file:
+   `az keyvault secret set --vault-name <kv> --name docusign-private-key --file private.key`
+4. **Connect** (Settings › Connect › Add Configuration › Custom): URL `https://<appUrl>/api/docusign/connect`,
+   data format *REST v2.1 JSON*, events Envelope Sent, Delivered, Completed, Declined, Voided and Recipient Completed,
+   *Include HMAC Signature* on. Under Connect › Connect Keys add a secret key, then:
+   `az keyvault secret set --vault-name <kv> --name docusign-connect-hmac --value '<key>'`
+5. Redeploy (push to `main` or re-run the workflow). The pipeline sees both secrets in Key Vault and switches DocuSign on.
+   The contract page button then reads **Send for signature (DocuSign)**. Without it, contracts are signed outside DocuSign
+   and the signed PDF is uploaded.
+
+Go-live later means a production integration key (DocuSign's go-live review), `docusignBaseUri` for GIT's production
+account, and `docusignAuthServer=account.docusign.com`.
+
 ## Local development
 
 ```

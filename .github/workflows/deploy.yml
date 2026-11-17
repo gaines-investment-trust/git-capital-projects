@@ -55,9 +55,13 @@ jobs:
           DBPASS=$(az keyvault secret show --vault-name "$KV" -n db-admin-password --query value -o tsv 2>/dev/null || true)
           AUTHSEC=$(az keyvault secret show --vault-name "$KV" -n auth-secret --query value -o tsv 2>/dev/null || true)
           echo "::add-mask::$DBPASS"; echo "::add-mask::$AUTHSEC"
+          # DocuSign switches on by itself once both its secrets are in Key Vault (names only; values never read here).
+          DS=false
+          if az keyvault secret show --vault-name "$KV" -n docusign-private-key --query id -o tsv >/dev/null 2>&1 && \
+             az keyvault secret show --vault-name "$KV" -n docusign-connect-hmac --query id -o tsv >/dev/null 2>&1; then DS=true; fi
           az deployment group create -g "${{ vars.AZURE_RESOURCE_GROUP }}" -f infra/main.bicep \
             -p envName=prod adminObjectId="${{ vars.AZURE_ADMIN_OBJECT_ID }}" \
-               image="${{ vars.AZURE_ACR_NAME }}.azurecr.io/git-capital-projects:${{ github.sha }}" dbPassword="$DBPASS" authSecret="$AUTHSEC" \
+               image="${{ vars.AZURE_ACR_NAME }}.azurecr.io/git-capital-projects:${{ github.sha }}" dbPassword="$DBPASS" authSecret="$AUTHSEC" docusignSecretsInVault=$DS \
             --query properties.outputs -o json
       - name: Run database migrations
         run: |

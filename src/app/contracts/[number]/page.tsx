@@ -7,9 +7,14 @@ import { compliance } from "@/services/vendors";
 import { query } from "@/lib/db";
 import { pacificLabel } from "@/lib/time";
 import { Shell, money, unitMoney } from "../../shell";
-import { PrepareButton, ExecutedForm } from "./forms";
+import { PrepareButton, ExecutedForm, VoidForm } from "./forms";
+import { docusignEnabled } from "@/lib/docusign";
 
 export const dynamic = "force-dynamic";
+const SIG: Record<string, string> = {
+  sent: "Sent to the vendor", delivered: "Vendor has opened it", signed_by_vendor: "Vendor signed; waiting for GIT's signature",
+  completed: "Signed by both parties", declined: "Declined", voided: "Voided",
+};
 const STATUS: Record<string, [string, string]> = { draft: ["Draft", ""], out_for_signature: ["Out for signature", "risk"], executed: ["Executed", "ok"] };
 
 export default async function ContractPage({ params }: { params: Promise<{ number: string }> }) {
@@ -32,15 +37,24 @@ export default async function ContractPage({ params }: { params: Promise<{ numbe
           <h1>{k.contract_number} · {k.vendor_name}</h1>
           <div className="row" style={{ marginTop: 6 }}><span className={`pill ${cls}`}>{label}</span><span className="small muted">{money(k.original_value)} · retainage {Number(k.retainage_pct)}% · {k.payment_terms}</span></div>
         </div>
-        {k.status === "draft" && actor.can("contract.edit") && <PrepareButton number={k.contract_number} />}
+        {k.status === "draft" && actor.can("contract.edit") && <PrepareButton number={k.contract_number} docusign={docusignEnabled()} />}
       </div>
+      {k.status === "draft" && k.signature_note && <div className="notice err">{k.signature_note}</div>}
       {!comp.ok && k.status !== "executed" && <div className="notice err">Paperwork missing for {k.vendor_name}: {comp.issues.join("; ")}.</div>}
 
       {k.status === "out_for_signature" && actor.can("contract.edit") && (
         <section className="card">
           <h2>Signature</h2>
-          <div className="small muted" style={{ marginBottom: 8 }}>DocuSign sending starts once GIT's DocuSign API credentials are added. Until then, download the generated contract, have both parties sign, and upload the signed PDF here.</div>
-          <ExecutedForm number={k.contract_number} />
+          {k.docusign_envelope_id ? (
+            <div style={{ marginBottom: 10 }}>
+              <div><b>DocuSign:</b> {SIG[k.signature_status] ?? k.signature_status}</div>
+              <div className="small muted">When both have signed, the signed copy files itself and the contract is executed. Envelope {k.docusign_envelope_id}.</div>
+            </div>
+          ) : (
+            <div className="small muted" style={{ marginBottom: 8 }}>{docusignEnabled() ? "This contract was generated before DocuSign was connected." : "DocuSign is not connected yet."} Download the generated contract, have both parties sign, and upload the signed PDF here.</div>
+          )}
+          <VoidForm number={k.contract_number} />
+          <details style={{ marginTop: 8 }}><summary className="small">Signed outside DocuSign? Upload the signed PDF</summary><div style={{ marginTop: 8 }}><ExecutedForm number={k.contract_number} /></div></details>
         </section>
       )}
 

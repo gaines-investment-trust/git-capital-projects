@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActor, graphToken } from "@/auth";
 import { closeBidding, gapAnalysis } from "@/services/leveling";
-import { requestAward, prepareForSignature, recordExecuted, sendRegrets } from "@/services/contracts";
+import { requestAward, prepareForSignature, recordExecuted, sendRegrets, voidSignature } from "@/services/contracts";
 import { sendMail, escapeHtml } from "@/lib/mail";
 import { one } from "@/lib/db";
 
@@ -75,7 +75,7 @@ export async function prepareContractAction(_: FormState, fd: FormData): Promise
   try {
     const r = await prepareForSignature(actor, String(fd.get("number")));
     revalidatePath(`/contracts/${fd.get("number")}`);
-    return { ok: `Contract generated and filed as ${r.file.name}` };
+    return { ok: r.docusign ? `Sent through DocuSign: vendor signs first, then GIT` : `Contract generated and filed as ${r.file.name}` };
   } catch (e) {
     return { error: msg(e) };
   }
@@ -89,6 +89,17 @@ export async function executedAction(_: FormState, fd: FormData): Promise<FormSt
     const r = await recordExecuted(actor, String(fd.get("number")), { name: f.name, content: Buffer.from(await f.arrayBuffer()), contentType: f.type });
     revalidatePath(`/contracts/${fd.get("number")}`);
     return { ok: `Executed. Filed as ${r.file.name}` };
+  } catch (e) {
+    return { error: msg(e) };
+  }
+}
+
+export async function voidSignatureAction(_: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor();
+  try {
+    await voidSignature(actor, String(fd.get("number")), String(fd.get("reason") ?? ""));
+    revalidatePath(`/contracts/${fd.get("number")}`);
+    return { ok: "Pulled back; the contract is a draft again" };
   } catch (e) {
     return { error: msg(e) };
   }

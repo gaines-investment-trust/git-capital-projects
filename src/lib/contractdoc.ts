@@ -1,6 +1,16 @@
+import { ANCHORS } from "./docusign";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle } from "docx";
 
 const usd = (n: unknown) => Number(n ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+/** Signature line with DocuSign anchors in white 1pt text: invisible on paper, where DocuSign places the tabs. */
+const sigLine = (who: string, a: { sign: string; date: string }) =>
+  new Paragraph({
+    spacing: { before: 360, after: 120 },
+    children: [
+      new TextRun({ text: `${who}: ` }), new TextRun({ text: a.sign, color: "FFFFFF", size: 2 }), new TextRun({ text: "______________________________   Date: " }),
+      new TextRun({ text: a.date, color: "FFFFFF", size: 2 }), new TextRun({ text: "____________" }),
+    ],
+  });
 const p = (t: string, bold = false) => new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: t, bold })] });
 const h = (t: string) => new Paragraph({ heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 120 }, children: [new TextRun({ text: t })] });
 const cell = (t: string, bold = false, w?: number) => new TableCell({ width: w ? { size: w, type: WidthType.PERCENTAGE } : undefined, children: [new Paragraph({ children: [new TextRun({ text: t, bold, size: 20 })] })] });
@@ -50,8 +60,8 @@ export async function buildContractDocx({ contract: k, sov }: { contract: any; s
         h("6. General terms"),
         p("[GIT standard general conditions: indemnity, termination, disputes, safety, site rules, resident notice and change-order procedure. To be inserted from counsel's approved template before use.]"),
         h("Signatures"),
-        p("Owner: ______________________________   Date: ____________"),
-        p("Contractor: ______________________________   Date: ____________"),
+        sigLine("Contractor", ANCHORS.contractor),
+        sigLine("Owner: Gaines Investment Trust", ANCHORS.owner),
       ],
     }],
   });

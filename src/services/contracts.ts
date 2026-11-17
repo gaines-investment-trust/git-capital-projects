@@ -5,6 +5,8 @@ import { type Actor, assertCan } from "@/lib/access";
 import { contractNumber } from "@/lib/naming";
 import { escapeHtml, sendMail } from "@/lib/mail";
 import { buildContractDocx } from "@/lib/contractdoc";
+import { docusignEnabled, sendContractEnvelope, downloadCompleted, voidEnvelope } from "@/lib/docusign";
+import { loadActor } from "@/lib/access";
 import { level, AwardInput } from "./leveling";
 import { nextNumber } from "./projects";
 import { requestApproval, onApproval } from "./approvals";
@@ -130,30 +132,110 @@ export async function prepareForSignature(actor: Actor, number: string) {
   const buf = await buildContractDocx(d);
   const f = await fileDocument(actor, { originalName: `${number}.docx`, content: buf, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", source: "generated" },
     { projectCode: d.contract.project_code, docType: "Contract-Draft", party: d.contract.short_name, docDate: pacificDate(), confidence: 1 });
-  await withTx(actor.userId, (c) => c.query(`update contract set status = 'out_for_signature', draft_document_id = $2, updated_at = now() where id = $1`, [d.contract.id, f.documentId]));
-  // DocuSign (4.3) is wired in once GIT's DocuSign API credentials are in Key Vault; until then the
-  // signed PDF is uploaded here and filed as Contract-Executed.
-  return { file: f, docusign: false };
+  // DocuSign (4.3) when configured: vendor signs first, then GIT's signatory. Until it is configured,
+  // or for a wet-signed copy, the signed PDF is uploaded on the contract page instead.
+  let envelopeId: string | null = null;
+  if (docusignEnabled()) {
+    const vc = await one<{ name: string; email: string }>(`select name, email from vendor_contact where vendor_id = $1 order by is_primary desc, name limit 1`, [d.contract.vendor_id]);
+    if (!vc?.email) throw new Error(`${d.contract.vendor_name} has no contact email for DocuSign`);
+    const sig = await one<{ value: { email: string; name: string } }>(`select value from app_setting where key = 'contract.signatory'`);
+    if (!sig?.value?.email) throw new Error("Set who signs contracts for GIT (setting contract.signatory)");
+    const cc = (await one<{ value: string[] }>(`select value from app_setting where key = 'contract.signatureCc'`))?.value ?? [];
+    envelopeId = await sendContractEnvelope({
+      contractNumber: number, contractId: d.contract.id, documentName: f.name ?? `${number}.docx`, docx: buf,
+      contractor: { name: vc.name || d.contract.vendor_name, email: vc.email }, owner: { name: sig.value.name, email: sig.value.email },
+      cc: [{ name: actor.displayName, email: actor.email }, ...cc.map((e) => ({ name: e, email: e }))],
+    });
+  }
+  await withTx(actor.userId, (c) =>
+    c.query(
+      `update contract set status = 'out_for_signature', draft_document_id = $2, docusign_envelope_id = $3, signature_status = $4,
+                           signature_sent_by = $5, signature_note = null, updated_at = now() where id = $1`,
+      [d.contract.id, f.documentId, envelopeId, envelopeId ? "sent" : null, actor.userId],
+    ),
+  );
+  return { file: f, docusign: !!envelopeId, envelopeId };
+}
+
+/** Pulls the envelope back (vendor asked for a change, wrong signer): voids it in DocuSign and returns the contract to draft. */
+export async function voidSignature(actor: Actor, number: string, reason: string) {
+  assertCan(actor, "contract.edit");
+  const d = await contractDetail(actor, number);
+  if (!d) throw new Error("Contract not found");
+  if (d.contract.status !== "out_for_signature") throw new Error("Contract is not out for signature");
+  if (reason.trim().length < 5) throw new Error("Give a reason; DocuSign shows it to the signers");
+  if (d.contract.docusign_envelope_id) await voidEnvelope(d.contract.docusign_envelope_id, reason);
+  await withTx(actor.userId, (c) =>
+    c.query(`update contract set status = 'draft', signature_status = case when docusign_envelope_id is null then null else 'voided' end, signature_note = $2, updated_at = now() where id = $1`, [d.contract.id, reason.trim()]),
+  );
+}
+
+/**
+ * DocuSign Connect message (already HMAC-verified by the route). Logged every time; repeats ignored.
+ * Completed → download the signed PDF with DocuSign's certificate, file it, execute the contract
+ * as the person who sent it. Declined or voided in DocuSign → back to draft with the reason.
+ */
+export async function handleConnectEvent(payload: any): Promise<{ status: string }> {
+  const event = String(payload?.event ?? "");
+  const envelopeId = String(payload?.data?.envelopeId ?? "");
+  if (!event || !envelopeId) return { status: "ignored: not an envelope event" };
+  const k = await one<any>(`select k.id, k.contract_number, k.status, k.signature_sent_by from contract k where k.docusign_envelope_id = $1`, [envelopeId]);
+  const ev = await one<{ id: string }>(
+    `insert into docusign_event (envelope_id, event, event_at, contract_id, payload) values ($1,$2,$3,$4,$5) returning id`,
+    [envelopeId, event, payload?.generatedDateTime ?? null, k?.id ?? null, payload],
+  );
+  const done = (status: string, error?: string) =>
+    one(`update docusign_event set processed = $2, error = $3 where id = $1`, [ev!.id, !error, error ?? null]).then(() => ({ status }));
+  if (!k) return done("ignored: unknown envelope");
+  try {
+    const summary = payload?.data?.envelopeSummary ?? {};
+    if (event === "envelope-completed") {
+      if (k.status === "executed") return done("already executed");
+      const actor = k.signature_sent_by ? await loadActor(k.signature_sent_by) : null;
+      if (!actor) throw new Error("The person who sent the contract is no longer active; upload the signed copy instead");
+      const pdf = await downloadCompleted(envelopeId);
+      await recordExecuted(actor, k.contract_number, { name: `${k.contract_number}-signed.pdf`, content: pdf, contentType: "application/pdf" }, "docusign");
+      return done("executed");
+    }
+    if (event === "envelope-declined" || event === "envelope-voided") {
+      const who = (summary?.recipients?.signers ?? []).find((s: any) => s.status === "declined");
+      const note = event === "envelope-declined" ? `Declined in DocuSign${who ? ` by ${who.name}` : ""}${who?.declinedReason ? `: ${who.declinedReason}` : ""}` : `Voided in DocuSign${summary?.voidedReason ? `: ${summary.voidedReason}` : ""}`;
+      await one(`update contract set status = 'draft', signature_status = $2, signature_note = $3, updated_at = now() where id = $1 and status = 'out_for_signature'`, [k.id, event === "envelope-declined" ? "declined" : "voided", note]);
+      return done("returned to draft");
+    }
+    if (event === "envelope-delivered") {
+      await one(`update contract set signature_status = 'delivered' where id = $1 and signature_status = 'sent'`, [k.id]);
+      return done("delivered");
+    }
+    if (event === "recipient-completed" && String(payload?.data?.recipientId) === "1") {
+      await one(`update contract set signature_status = 'signed_by_vendor' where id = $1 and signature_status in ('sent','delivered')`, [k.id]);
+      return done("vendor signed");
+    }
+    return done(`noted: ${event}`);
+  } catch (e) {
+    await done("error", e instanceof Error ? e.message : String(e));
+    throw e;
+  }
 }
 
 /** Executed copy received (DocuSign webhook or upload): file it, lock the contract, start the job's controls. */
-export async function recordExecuted(actor: Actor, number: string, file: { name: string; content: Buffer; contentType: string }) {
+export async function recordExecuted(actor: Actor, number: string, file: { name: string; content: Buffer; contentType: string }, via: "upload" | "docusign" = "upload") {
   assertCan(actor, "contract.edit");
   const d = await contractDetail(actor, number);
   if (!d) throw new Error("Contract not found");
   if (d.contract.status !== "out_for_signature") throw new Error("Generate the contract for signature first");
   if (!/pdf$/i.test(file.name) && file.contentType !== "application/pdf") throw new Error("Upload the signed contract as a PDF");
   const today = pacificDate();
-  const f = await fileDocument(actor, { originalName: file.name, content: file.content, contentType: "application/pdf", source: "upload" },
+  const f = await fileDocument(actor, { originalName: file.name, content: file.content, contentType: "application/pdf", source: via },
     { projectCode: d.contract.project_code, docType: "Contract-Executed", party: d.contract.short_name, docDate: today, amount: Number(d.contract.original_value), confidence: 1 });
   await withTx(actor.userId, async (c) => {
-    await c.query(`update contract set status = 'executed', executed_document_id = $2, signed_via = 'upload', executed_at = now(), start_date = coalesce(start_date, current_date), updated_at = now() where id = $1`, [d.contract.id, f.documentId]);
+    await c.query(`update contract set status = 'executed', executed_document_id = $2, signed_via = $3, signature_status = case when $3 = 'docusign' then 'completed' else signature_status end, executed_at = now(), start_date = coalesce(start_date, current_date), updated_at = now() where id = $1`, [d.contract.id, f.documentId, via]);
     // Rule "Contract executed" (section 11): closeout checklist; commitment shows in the budget via the executed status.
     const tpl = (await c.query(`select items from checklist_template where kind = 'closeout' order by name limit 1`)).rows[0];
     for (const it of tpl?.items ?? []) {
       await c.query(`insert into closeout_item (project_id, key, label) values ($1,$2,$3) on conflict (project_id, key) do nothing`, [d.contract.project_id, it.key, it.label]);
     }
-    await c.query(`insert into decision_log (project_id, decision, rationale, decided_by) values ($1,$2,$3,$4)`, [d.contract.project_id, `Contract ${number} executed`, `Signed copy filed as ${f.name}`, actor.userId]);
+    await c.query(`insert into decision_log (project_id, decision, rationale, decided_by) values ($1,$2,$3,$4)`, [d.contract.project_id, `Contract ${number} executed`, `Signed copy ${via === "docusign" ? "received from DocuSign and " : ""}filed as ${f.name}`, actor.userId]);
   });
   // Baseline at contract award (7.4)
   await saveBaseline(actor, d.contract.project_id);

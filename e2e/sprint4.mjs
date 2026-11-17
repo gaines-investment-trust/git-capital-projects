@@ -145,6 +145,7 @@ const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("l
 if (!(await dl.suggestedFilename()).endsWith(".docx")) problems.push("draft download is not a .docx");
 
 step("upload the signed PDF; contract executes and commits the budget");
+await page.getByText("Signed outside DocuSign? Upload the signed PDF").click();
 await page.setInputFiles('input[name="file"]', pdf);
 await page.getByRole("button", { name: "Record as executed" }).click();
 await page.getByText("Executed", { exact: true }).waitFor({ timeout: 30000 });

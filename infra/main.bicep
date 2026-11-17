@@ -14,6 +14,15 @@ param entraClientId string = '0fc09c94-b943-468b-8642-4616315e435c'
 @description('SharePoint drive and folder item ids of "GIT Project Management Claude Platform"')
 param spDriveId string = 'b!A1NLSZe1ZkK5QwrXZDNALHh5J1PgPGZLvpJgaDvCnZPgZHUClmbgSq5SL2o30ovp'
 param spRootItemId string = '016VWGM5LMN6VZCHNETJGKSYDS47UAALQH'
+// DocuSign (developer account until go-live). None of these are secret; the private key and
+// Connect HMAC key go into Key Vault as 'docusign-private-key' and 'docusign-connect-hmac'.
+param docusignIntegrationKey string = '321cc404-3d85-4cdb-ad2c-bb217e464a49'
+param docusignUserId string = '1e044bae-a87c-446b-a99b-9d9496a8298a'
+param docusignAccountId string = '4cbbfba6-a3b1-4bc8-afcb-9c8be5577e71'
+param docusignBaseUri string = 'https://demo.docusign.net'
+param docusignAuthServer string = 'account-d.docusign.com'
+@description('Set true once both DocuSign secrets are in Key Vault (deploys fail on a missing secret reference).')
+param docusignSecretsInVault bool = false
 @description('Object id of the person who manages secrets (Joe)')
 param adminObjectId string
 @secure()
@@ -166,6 +175,20 @@ var secrets = [
   { name: 'auth-secret', keyVaultUrl: '${kvUri}secrets/auth-secret', identity: appId.id }
   { name: 'entra-client-secret', keyVaultUrl: '${kvUri}secrets/entra-client-secret', identity: appId.id }
 ]
+var docusignSecrets = docusignSecretsInVault ? [
+  { name: 'docusign-private-key', keyVaultUrl: '${kvUri}secrets/docusign-private-key', identity: appId.id }
+  { name: 'docusign-connect-hmac', keyVaultUrl: '${kvUri}secrets/docusign-connect-hmac', identity: appId.id }
+] : []
+var docusignEnv = concat([
+  { name: 'DOCUSIGN_INTEGRATION_KEY', value: docusignIntegrationKey }
+  { name: 'DOCUSIGN_USER_ID', value: docusignUserId }
+  { name: 'DOCUSIGN_ACCOUNT_ID', value: docusignAccountId }
+  { name: 'DOCUSIGN_BASE_URI', value: docusignBaseUri }
+  { name: 'DOCUSIGN_AUTH_SERVER', value: docusignAuthServer }
+], docusignSecretsInVault ? [
+  { name: 'DOCUSIGN_PRIVATE_KEY', secretRef: 'docusign-private-key' }
+  { name: 'DOCUSIGN_CONNECT_HMAC_KEY', secretRef: 'docusign-connect-hmac' }
+] : [])
 var usesPlaceholder = startsWith(image, 'mcr.microsoft.com')
 var commonEnv = [
   { name: 'DATABASE_URL', secretRef: 'database-url' }
@@ -195,14 +218,14 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       ingress: { external: true, targetPort: usesPlaceholder ? 80 : 3000, transport: 'auto', allowInsecure: false }
       registries: usesPlaceholder ? [] : [{ server: acr.properties.loginServer, identity: appId.id }]
-      secrets: usesPlaceholder ? [] : secrets
+      secrets: usesPlaceholder ? [] : concat(secrets, docusignSecrets)
     }
     template: {
       containers: [{
         name: 'web'
         image: image
         resources: { cpu: json('0.5'), memory: '1Gi' }
-        env: usesPlaceholder ? [] : concat(commonEnv, [{ name: 'APP_BASE_URL', value: 'https://${name}-web.${cae.properties.defaultDomain}' }])
+        env: usesPlaceholder ? [] : concat(commonEnv, docusignEnv, [{ name: 'APP_BASE_URL', value: 'https://${name}-web.${cae.properties.defaultDomain}' }])
         probes: usesPlaceholder ? [] : [
           { type: 'Liveness', httpGet: { path: '/api/health', port: 3000 }, periodSeconds: 30 }
           { type: 'Readiness', httpGet: { path: '/api/health', port: 3000 }, periodSeconds: 10 }
