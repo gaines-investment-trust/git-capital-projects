@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { withTx, query } from "@/lib/db";
 import { type Actor, assertCan } from "@/lib/access";
+import { assignPendingApprovers } from "./approvals";
 
 export const AddPersonInput = z.object({
   entraObjectId: z.string().uuid().optional(),
@@ -64,6 +65,7 @@ export async function addPerson(actor: Actor, raw: unknown) {
        values ('Provision Entra group, SharePoint and Teams access; send welcome', null, 'app_user', $1, 'queued', $2)`,
       [u.id, actor.userId],
     );
+    await assignPendingApprovers(c);
     return { userId: u.id as string };
   });
 }

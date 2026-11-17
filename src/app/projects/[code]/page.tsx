@@ -8,6 +8,9 @@ import { UploadForm } from "./upload";
 import { ScheduleTable, BudgetCell, type TaskRow } from "./editors";
 import { scheduleChanges } from "@/services/schedule";
 import { saveBaselineAction } from "../../actions";
+import { createRfpAction } from "../../rfp-actions";
+import { rfpsForProject } from "@/services/rfps";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 const d = (v: any) => (v ? new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "—");
@@ -19,7 +22,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const data = await getProjectByCode(actor, code);
   if (!data) notFound();
   const { project: p, budget, schedule, decisions, documents } = data;
-  const [approvals, changes] = await Promise.all([myOpenApprovals(actor.userId), scheduleChanges(p.id)]);
+  const [approvals, changes, rfpList] = await Promise.all([myOpenApprovals(actor.userId), scheduleChanges(p.id), rfpsForProject(p.id)]);
   const canEdit = actor.can("project.edit");
   const budgetOpen = canEdit && p.stage_order < 5;
   const tot = (k: string) => budget.reduce((a: number, b: any) => a + Number(b[k] ?? 0), 0);
@@ -40,6 +43,20 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
         {[["Revised budget", money(tot("revised_budget"))], ["Committed", money(tot("committed"))], ["Invoiced", money(tot("invoiced"))], ["Paid", money(tot("paid"))], ["Forecast", money(tot("forecast"))]].map(([l, v]) => (
           <div key={l} className="card tile"><div className="small muted">{l}</div><div className="v">{v}</div></div>
         ))}
+      </section>
+
+      <section className="card">
+        <div className="spread"><h2>RFPs and bidding</h2>
+          {actor.can("rfp.create") && <form action={createRfpAction}><input type="hidden" name="projectCode" value={p.project_code} /><button className="btn primary">+ New RFP</button></form>}
+        </div>
+        {rfpList.length === 0 ? <div className="muted">No RFP yet.</div> : (
+          <table><thead><tr><th>RFP</th><th>Status</th><th>Bids due</th><th className="num">Invited</th><th className="num">Bids</th></tr></thead>
+            <tbody>{rfpList.map((r: any) => (
+              <tr key={r.id}><td><Link href={`/rfps/${r.rfp_number}`} style={{ fontWeight: 600 }}>{r.rfp_number}</Link><div className="small muted">{r.title}</div></td>
+                <td>{r.status.replace("_", " ")}</td><td className="small">{r.bid_due_at ? new Date(r.bid_due_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Los_Angeles" }) : "—"}</td>
+                <td className="num">{r.invited}</td><td className="num">{r.submitted}</td></tr>
+            ))}</tbody></table>
+        )}
       </section>
 
       <section className="card">

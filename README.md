@@ -28,7 +28,32 @@ Gaines Investment Trust's internal platform for capital, deferred-maintenance, l
 - Excel export of the portfolio and of each project budget.
 - Installable app: manifest, icon, service worker and offline page.
 
-Next: sprint 3, the RFP builder, vendor directory and vendor portal, and sending RFPs from Outlook. After that come bid leveling, contracts, and payments with lien releases.
+**Sprint 3 complete:**
+- Vendor directory:
+  - duplicate detection;
+  - insurance certificates, licenses and status;
+  - a compliance check (insurance, license for the property's state, W-9, do-not-use);
+  - bid history on each vendor.
+- RFP builder:
+  - numbered RFPs (`RFP-{PROP}-{###}`) with the project type's default bid form and GIT's insurance minimums;
+  - scope, bid form editor, key dates in Pacific time, requirements;
+  - a package check that blocks submission until everything required is in place.
+- Approval engine:
+  - sequential chains at the confirmed limits, with the PM's own step counting as their submission;
+  - "Needs your OK" inbox with Approve, Request changes and Discuss; a note is required when sending back;
+  - President steps wait for Jeff's account and are never taken by another executive;
+  - every decision logged.
+- Issuing an RFP generates the Word document and an Excel bid form and files both in `02 RFP/Issued` by the naming convention.
+- Invitations:
+  - sent from the manager's own Outlook, or a local outbox until Graph is approved, with the RFP attached;
+  - a personal portal link per vendor, stored only as a hash and expiring 14 days after bids close;
+  - do-not-use vendors skipped, never invited twice.
+- Vendor portal, with no password and built for phones:
+  - confirm intent, or decline with a reason;
+  - ask questions, with answers published to all bidders;
+  - electronic bid form with a live total; every resubmission is kept as a version and late bids are flagged.
+
+Next: sprint 4, bid leveling with Claude gap analysis, award, and contracts with DocuSign.
 
 ## Layout
 

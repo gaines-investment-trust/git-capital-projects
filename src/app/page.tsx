@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { requireActor } from "@/auth";
 import { portfolio } from "@/services/projects";
-import { myOpenApprovals } from "@/services/approvals";
+import { myOpenApprovals, unassignedApprovals } from "@/services/approvals";
+import { query } from "@/lib/db";
+import { Inbox, type InboxItem } from "./inbox";
 import { Shell, money } from "./shell";
 import { ViewTabs, Board, Gantt } from "./views";
 
@@ -12,7 +14,10 @@ const HEALTH: Record<string, string> = { on_track: "On track", at_risk: "At risk
 export default async function Home({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
   const view = ((await searchParams).view ?? "grid") as string;
   const actor = await requireActor();
-  const [rows, approvals] = await Promise.all([portfolio(actor), myOpenApprovals(actor.userId)]);
+  const [rows, approvals, unassigned] = await Promise.all([portfolio(actor), myOpenApprovals(actor.userId), actor.has("admin") ? unassignedApprovals() : Promise.resolve([])]);
+  const rfpIds = approvals.filter((a: any) => a.object_type === "rfp").map((a: any) => a.object_id);
+  const rfpNumbers = rfpIds.length ? Object.fromEntries((await query<any>(`select id, rfp_number from rfp where id = any($1::uuid[])`, [rfpIds])).map((r) => [r.id, r.rfp_number])) : {};
+  const items: InboxItem[] = approvals.map((a: any) => ({ ...a, link: a.object_type === "rfp" ? `/rfps/${rfpNumbers[a.object_id]}` : a.project_code ? `/projects/${a.project_code}` : null }));
   const sum = (k: "budget" | "committed" | "invoiced" | "paid" | "forecast") => rows.reduce((a, r) => a + Number(r[k]), 0);
   const budget = sum("budget"), forecast = sum("forecast");
   const variance = forecast - budget;
@@ -30,12 +35,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ v
 
       <section id="needs" className="card">
         <h2>Needs your OK</h2>
-        {approvals.length === 0 ? (
-          <div className="muted">Nothing waiting for you.</div>
-        ) : (
-          <table><tbody>{approvals.map((a: any) => (
-            <tr key={a.id}><td><span className="pill">{a.object_type}</span></td><td>{a.object_id}</td><td className="num">{a.days_waiting} days waiting</td></tr>
-          ))}</tbody></table>
+        <Inbox items={items} />
+        {unassigned.length > 0 && (
+          <div className="notice info" style={{ marginTop: 10 }}>
+            {unassigned.length} approval step{unassigned.length === 1 ? " is" : "s are"} waiting for someone without an account yet (for example Jeff Gaines as President). Add them in <Link href="/admin/people">People</Link>; the steps are assigned to them automatically.
+          </div>
         )}
       </section>
 

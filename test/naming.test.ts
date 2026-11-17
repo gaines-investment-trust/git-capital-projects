@@ -71,3 +71,13 @@ describe("approval limits confirmed by Joe on 2026-11-16", () => {
     expect(chainRolesFor("override", 1)).toEqual(["president"]);
   });
 });
+
+import { pacificToIso, isoToPacificLocal } from "@/lib/time";
+describe("Pacific time for RFP deadlines", () => {
+  it("converts winter (PST, UTC-8) and summer (PDT, UTC-7) correctly and round-trips", () => {
+    expect(pacificToIso("2027-01-22T14:00")).toBe("2027-01-22T22:00:00.000Z");
+    expect(pacificToIso("2027-07-15T14:00")).toBe("2027-07-15T21:00:00.000Z");
+    expect(isoToPacificLocal("2027-01-22T22:00:00.000Z")).toBe("2027-01-22T14:00");
+    expect(isoToPacificLocal("2027-07-15T21:00:00.000Z")).toBe("2027-07-15T14:00");
+  });
+});

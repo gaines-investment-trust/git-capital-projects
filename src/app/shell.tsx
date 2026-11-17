@@ -5,6 +5,7 @@ import { signOut } from "@/auth";
 const NAV = [
   { href: "/", label: "Home", key: "home" },
   { href: "/projects/new", label: "New project", key: "new", perm: "project.create" },
+  { href: "/vendors", label: "Vendors", key: "vendors" },
   { href: "/unfiled", label: "Unfiled documents", key: "unfiled" },
 ];
 const ADMIN = [
