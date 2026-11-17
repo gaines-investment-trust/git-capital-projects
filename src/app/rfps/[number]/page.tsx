@@ -7,6 +7,7 @@ import { listVendors, compliance } from "@/services/vendors";
 import { query } from "@/lib/db";
 import { isoToPacificLocal, pacificLabel } from "@/lib/time";
 import { Shell, money } from "../../shell";
+import { closeBiddingAction } from "../../award-actions";
 import { ScopeForm, BidFormEditor, DatesForm, RequirementsForm, SubmitButton, IssueButton, InviteForm, AnswerForm } from "./forms";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,12 @@ export default async function RfpPage({ params }: { params: Promise<{ number: st
         </div>
         {draft && <SubmitButton number={rfp.rfp_number} blocked={blockers.length > 0 || !editable} />}
         {rfp.status === "approved" && actor.can("rfp.edit") && <IssueButton number={rfp.rfp_number} />}
+        {["issued", "closed", "awarded"].includes(rfp.status) && (
+          <div className="row">
+            {rfp.status === "issued" && actor.can("rfp.edit") && <form action={closeBiddingAction}><input type="hidden" name="number" value={rfp.rfp_number} /><button className="btn">Close bidding</button></form>}
+            <Link className="btn primary" href={`/rfps/${rfp.rfp_number}/leveling`}>Bid leveling and award</Link>
+          </div>
+        )}
       </div>
 
       <section className="card">
@@ -68,7 +75,7 @@ export default async function RfpPage({ params }: { params: Promise<{ number: st
         </section>
       )}
 
-      {rfp.status === "issued" && (
+      {["issued", "closed", "awarded"].includes(rfp.status) && (
         <>
           <section className="card">
             <h2>Issued documents</h2>
@@ -90,11 +97,11 @@ export default async function RfpPage({ params }: { params: Promise<{ number: st
               </table></div>
             )}
           </section>
-          <section className="card">
+          {rfp.status === "issued" && <section className="card">
             <h2>Invite vendors</h2>
             <InviteForm number={rfp.rfp_number} vendors={vendorRows} />
             <div className="small muted" style={{ marginTop: 6 }}>No vendors yet? <Link href="/vendors">Add them in the vendor directory</Link>.</div>
-          </section>
+          </section>}
           <section className="card">
             <h2>Questions and answers</h2>
             {questions.length === 0 ? <div className="muted">No questions yet.</div> : questions.map((q: any) => (

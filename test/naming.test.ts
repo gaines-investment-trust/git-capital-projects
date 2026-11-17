@@ -81,3 +81,14 @@ describe("Pacific time for RFP deadlines", () => {
     expect(isoToPacificLocal("2027-07-15T21:00:00.000Z")).toBe("2027-07-15T14:00");
   });
 });
+
+import { pacificDate } from "@/lib/time";
+import { isoDate } from "@/lib/naming";
+describe("calendar dates follow Pacific time", () => {
+  it("10:34 PM on Nov 16 in California is still the 16th, not UTC's 17th", () => {
+    const t = new Date("2026-11-17T06:34:00Z");
+    expect(pacificDate(t)).toBe("2026-11-16");
+    expect(isoDate(t)).toBe("2026-11-16");
+  });
+  it("leaves plain calendar dates alone", () => expect(isoDate("2026-03-08")).toBe("2026-03-08"));
+});

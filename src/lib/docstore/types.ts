@@ -31,4 +31,6 @@ export interface DocumentStore {
   exists(relPath: string): Promise<boolean>;
   setMetadata(item: StoredItem, meta: FileMetadata): Promise<void>;
   list(folderRelPath: string): Promise<StoredItem[]>;
+  /** File bytes by drive item id and path. */
+  download(itemId: string, relPath: string): Promise<Buffer>;
 }

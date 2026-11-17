@@ -31,3 +31,8 @@ export function pacificLabel(iso: string | Date | null | undefined, withTime = t
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-US", withTime ? { dateStyle: "medium", timeStyle: "short", timeZone: TZ } : { dateStyle: "medium", timeZone: TZ });
 }
+
+/** Calendar date (YYYY-MM-DD) in GIT's time zone. File names and "today" checks use this, not UTC. */
+export function pacificDate(d: Date | number = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}

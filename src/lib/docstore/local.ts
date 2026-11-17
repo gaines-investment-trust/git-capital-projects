@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readdir, stat, access } from "node:fs/promises";
+import { mkdir, writeFile, readdir, stat, access, readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import type { DocumentStore, FileMetadata, StoredItem } from "./types";
 
@@ -47,5 +47,9 @@ export class LocalDocumentStore implements DocumentStore {
       out.push({ ...this.item(`${folderRelPath}/${n}`), version: s.isDirectory() ? undefined : "1.0" });
     }
     return out;
+  }
+
+  async download(_itemId: string, relPath: string) {
+    return readFile(join(this.root, relPath));
   }
 }

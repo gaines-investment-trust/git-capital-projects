@@ -55,3 +55,5 @@ export const money = (v: unknown) => {
   const n = Number(v ?? 0);
   return n === 0 ? "—" : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 };
+/** Unit prices keep their cents ($6.25/SF). */
+export const unitMoney = (v: unknown) => Number(v ?? 0).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });

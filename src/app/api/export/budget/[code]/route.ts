@@ -1,4 +1,5 @@
 import { requireActor } from "@/auth";
+import { pacificDate } from "@/lib/time";
 import { getProjectByCode } from "@/services/projects";
 import { workbook, xlsxResponse } from "@/lib/excel";
 
@@ -23,5 +24,5 @@ export async function GET(_: Request, { params }: { params: Promise<{ code: stri
     data.budget as Record<string, unknown>[],
     `${data.project.project_code} · ${data.project.name} · budget by cost code`,
   );
-  return xlsxResponse(buf, `${data.project.project_code}_Budget_GIT_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return xlsxResponse(buf, `${data.project.project_code}_Budget_GIT_${pacificDate()}.xlsx`);
 }

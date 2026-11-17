@@ -146,4 +146,10 @@ export class GraphDocumentStore implements DocumentStore {
     const j = await this.call("GET", `${this.byPath(folderRelPath)}:/children?$top=999`);
     return (j?.value ?? []).map((x: any) => this.toItem(x, `${folderRelPath}/${x.name}`));
   }
+
+  async download(itemId: string) {
+    const r = await fetch(`https://graph.microsoft.com/v1.0/drives/${this.opts.driveId}/items/${itemId}/content`, { headers: { Authorization: `Bearer ${await this.token()}` } });
+    if (!r.ok) throw new Error(`Download failed: ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
+  }
 }

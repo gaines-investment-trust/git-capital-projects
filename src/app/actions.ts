@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { pacificDate } from "@/lib/time";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireActor, graphToken } from "@/auth";
@@ -59,7 +60,9 @@ export async function addPersonAction(_: FormState, fd: FormData): Promise<FormS
   try {
     const scopeIds = fd.getAll("scopeIds").map(String).filter(Boolean);
     const limit = String(fd.get("approvalLimit") ?? "");
-    await addPerson(actor, { ...Object.fromEntries(fd), scopeIds, approvalLimit: limit === "" ? null : Number(limit) });
+    // Blank optional fields (manual entry has no directory id or job title) arrive as "": drop them.
+    const fields = Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === "string" && v.trim() !== ""));
+    await addPerson(actor, { ...fields, scopeIds, approvalLimit: limit === "" ? null : Number(limit) });
   } catch (e) {
     return { error: msg(e) };
   }
@@ -94,7 +97,7 @@ export async function uploadDocumentAction(_: FormState, fd: FormData): Promise<
         docType: String(fd.get("docType")),
         qualifier: String(fd.get("qualifier") ?? "") || undefined,
         party: String(fd.get("party") || "GIT"),
-        docDate: String(fd.get("docDate") || new Date().toISOString().slice(0, 10)),
+        docDate: String(fd.get("docDate") || pacificDate()),
         amount: fd.get("amount") ? Number(fd.get("amount")) : null,
         confidence: 1,
       },

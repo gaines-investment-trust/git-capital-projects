@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { pacificDate } from "@/lib/time";
 import { requireActor } from "@/auth";
 import { listVendors } from "@/services/vendors";
 import { myOpenApprovals } from "@/services/approvals";
@@ -11,8 +12,8 @@ export default async function Vendors({ searchParams }: { searchParams: Promise<
   const actor = await requireActor();
   const f = await searchParams;
   const [rows, inbox] = await Promise.all([listVendors({ trade: f.trade || undefined, state: f.state || undefined }), myOpenApprovals(actor.userId)]);
-  const today = new Date().toISOString().slice(0, 10);
-  const soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const today = pacificDate();
+  const soon = pacificDate(Date.now() + 30 * 86400000);
   return (
     <Shell actor={actor} active="vendors" approvals={inbox.length}>
       <h1>Vendors</h1>

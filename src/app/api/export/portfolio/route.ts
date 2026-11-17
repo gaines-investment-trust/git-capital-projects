@@ -1,4 +1,5 @@
 import { requireActor } from "@/auth";
+import { pacificDate } from "@/lib/time";
 import { portfolio } from "@/services/projects";
 import { workbook, xlsxResponse } from "@/lib/excel";
 
@@ -22,5 +23,5 @@ export async function GET() {
     rows,
     "GIT capital projects portfolio",
   );
-  return xlsxResponse(buf, `GIT-Portfolio_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return xlsxResponse(buf, `GIT-Portfolio_${pacificDate()}.xlsx`);
 }

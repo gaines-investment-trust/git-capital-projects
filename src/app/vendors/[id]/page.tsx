@@ -36,6 +36,7 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
         <table><thead><tr><th>Document</th><th>Detail</th><th>Expires</th></tr></thead>
           <tbody>
             {cois.map((c: any) => <tr key={c.id}><td>COI{c.carrier ? ` · ${c.carrier}` : ""}</td><td className="small">GL {money(c.gl_each_occurrence)} / {money(c.gl_aggregate)}</td><td>{c.expires_on}</td></tr>)}
+            <tr><td>W-9</td><td className="small">{v.w9_doc_id ? <a href={`/api/documents/${v.w9_doc_id}`}>On file</a> : "Not on file"}</td><td>—</td></tr>
             {licenses.map((l: any) => <tr key={l.id}><td>License · {l.state}</td><td className="small">{l.license_number}</td><td>{l.expires_on ?? "—"}</td></tr>)}
           </tbody>
         </table>

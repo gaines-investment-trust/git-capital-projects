@@ -29,6 +29,7 @@ export function PaperworkForms({ vendorId, status }: { vendorId: string; status:
   const [c, coiAction, p1] = useActionState<FormState, FormData>(vendorPaperworkAction, undefined);
   const [l, licAction, p2] = useActionState<FormState, FormData>(vendorPaperworkAction, undefined);
   const [st, statusAction, p3] = useActionState<FormState, FormData>(vendorPaperworkAction, undefined);
+  const [w, w9Action, p4] = useActionState<FormState, FormData>(vendorPaperworkAction, undefined);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <form action={coiAction} className="grid" style={{ alignItems: "end" }}>
@@ -45,6 +46,11 @@ export function PaperworkForms({ vendorId, status }: { vendorId: string; status:
         <label className="f">License number<input name="licenseNumber" required /></label>
         <label className="f">Expires<input name="expiresOn" type="date" /></label>
         <div className="row"><button className="btn" disabled={p2}>Add license</button>{l?.ok && <span className="notice ok">{l.ok}</span>}{l?.error && <span className="notice err">{l.error}</span>}</div>
+      </form>
+      <form action={w9Action} className="row" style={{ alignItems: "end" }}>
+        <input type="hidden" name="vendorId" value={vendorId} /><input type="hidden" name="kind" value="w9" />
+        <label className="f">W-9 (PDF)<input type="file" name="file" accept="application/pdf,.pdf" required /></label>
+        <button className="btn" disabled={p4}>Upload W-9</button>{w?.ok && <span className="notice ok">{w.ok}</span>}{w?.error && <span className="notice err">{w.error}</span>}
       </form>
       <form action={statusAction} className="row">
         <input type="hidden" name="vendorId" value={vendorId} /><input type="hidden" name="kind" value="status" />

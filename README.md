@@ -53,7 +53,30 @@ Gaines Investment Trust's internal platform for capital, deferred-maintenance, l
   - ask questions, with answers published to all bidders;
   - electronic bid form with a live total; every resubmission is kept as a version and late bids are flagged.
 
-Next: sprint 4, bid leveling with Claude gap analysis, award, and contracts with DocuSign.
+**Sprint 4 complete:**
+- Bid leveling (`/rfps/{number}/leveling`):
+  - closing bidding from the RFP page;
+  - side-by-side lines per bidder, using each bidder's latest bid version;
+  - toggles for alternates and for plugs (median of other bids, priced for missing scope and shown separately, never part of contract value);
+  - outlier flags at ±30% of the median with three or more bids;
+  - a paperwork check per bidder;
+  - the lowest compliant bidder recommended.
+- Gap analysis:
+  - rules (missing or excluded scope, outliers, late bids, paperwork), plus Claude's review once the API key is set, with vendor data redacted and every run logged;
+  - an editable clarification email per bidder, sent from the manager's Outlook.
+- Award:
+  - a required memo, with the chosen alternates;
+  - blocked if the winner's paperwork is incomplete or any base line is unpriced (a revised bid clears this);
+  - approval goes PM, then COO, then President.
+- Contract:
+  - on final approval, `{PROJECT}-K##` is created with a schedule of values built straight from the winning bid and linked to budget lines, with no re-keying;
+  - the Word contract is generated and filed (DocuSign sending waits for GIT's credentials);
+  - uploading the signed PDF executes the contract, commits the budget, starts the closeout checklist and saves the schedule baseline;
+  - regret letters go to the other bidders.
+- Vendors: W-9 upload (PDF), filed under `00 Portfolio/Vendors/{Vendor}`.
+- File names and date checks use the California calendar date, not UTC.
+
+Next: sprint 5, pay requests with the payment gate, lien releases, and change orders.
 
 ## Layout
 

@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { pacificDate } from "@/lib/time";
 import { withTx, query, one } from "@/lib/db";
 import { type Actor, assertCan } from "@/lib/access";
 import { vendorShortName } from "@/lib/naming";
+import { docStore } from "@/lib/docstore";
 
 export const VendorInput = z.object({
   name: z.string().trim().min(2),
@@ -81,7 +83,7 @@ export type Compliance = { ok: boolean; canInvite: boolean; issues: string[]; co
  * state, W-9 on file, not do-not-use. Inviting to bid is allowed while paperwork is pending
  * (they register through the portal), but not for do-not-use vendors.
  */
-export async function compliance(vendorId: string, state?: string, asOf = new Date().toISOString().slice(0, 10)): Promise<Compliance> {
+export async function compliance(vendorId: string, state?: string, asOf = pacificDate()): Promise<Compliance> {
   const v = await one<any>(`select approved_status, w9_doc_id from vendor where id = $1`, [vendorId]);
   if (!v) throw new Error("Vendor not found");
   const coi = await one<{ expires_on: string }>(`select expires_on from vendor_coi where vendor_id = $1 order by expires_on desc limit 1`, [vendorId]);
@@ -124,4 +126,32 @@ export async function vendorCard(vendorId: string) {
     ),
   ]);
   return vendor ? { vendor, contacts, cois, licenses, history, compliance: await compliance(vendorId) } : null;
+}
+
+/**
+ * Files a vendor-level document (W-9 today; COI PDFs next) under 00 Portfolio/Vendors/{ShortName},
+ * never overwriting. A W-9 becomes the vendor's W-9 on file, which the award and payment gates check.
+ */
+export async function uploadVendorDoc(actor: Actor, vendorId: string, kind: "W9", file: { name: string; content: Buffer; contentType: string }) {
+  if (!/\.pdf$/i.test(file.name) || file.content.length === 0) throw new Error("Upload the W-9 as a PDF");
+  if (file.content.length > 25 * 1024 * 1024) throw new Error("File is over 25 MB");
+  const v = await one<{ short_name: string }>(`select short_name from vendor where id = $1`, [vendorId]);
+  if (!v) throw new Error("Vendor not found");
+  const store = docStore();
+  const folder = `00 Portfolio/Vendors/${v.short_name}`;
+  const date = pacificDate();
+  let n = 1;
+  let name = `${v.short_name}_${kind}_${date}_v${n}.pdf`;
+  while (await store.exists(`${folder}/${name}`)) name = `${v.short_name}_${kind}_${date}_v${++n}.pdf`;
+  const item = await store.upload(folder, name, file.content, "application/pdf");
+  await store.setMetadata(item, { DocType: kind, Vendor: v.short_name, Status: "Filed", DocDate: date, OriginalFileName: file.name });
+  return withTx(actor.userId, async (c) => {
+    const doc = (await c.query(
+      `insert into document (sp_drive_id, sp_item_id, sp_path, sp_version, file_name, original_file_name, doc_type, version_n, vendor_id, doc_date, source, created_by)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'upload',$11) returning id`,
+      [item.driveId, item.itemId, item.path, item.version ?? null, name, file.name, kind, n, vendorId, date, actor.userId],
+    )).rows[0];
+    await c.query(`update vendor set w9_doc_id = $2 where id = $1`, [vendorId, doc.id]);
+    return { documentId: doc.id as string, name };
+  });
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pacificDate } from "@/lib/time";
 import type { PoolClient } from "pg";
 import { withTx, query, one } from "@/lib/db";
 import { type Actor, assertCan } from "@/lib/access";
@@ -46,10 +47,13 @@ export async function createRfp(actor: Actor, projectCode: string) {
        values ($1,$2,'draft',$3,$4,$5,$6,$6) returning id`,
       [number, p.id, `${p.pname} · ${p.name}`, scope, req, actor.userId],
     )).rows[0];
+    const main = (await c.query(
+      `select b.cost_code_id from budget_line b join cost_code cc on cc.id = b.cost_code_id
+        where b.project_id = $1 and cc.code not like '01-%' order by b.original_budget desc, cc.code limit 1`, [p.id])).rows[0]?.cost_code_id ?? null;
     let i = 0;
     for (const l of (p.default_bid_lines ?? []) as BidLine[]) {
-      await c.query(`insert into bid_form_line (rfp_id, line_no, description, quantity, unit, kind, sort_order) values ($1,$2,$3,$4,$5,$6,$7)`, [
-        r.id, l.line_no, l.description, l.quantity ?? null, l.unit, l.kind, i++,
+      await c.query(`insert into bid_form_line (rfp_id, line_no, description, quantity, unit, kind, sort_order, cost_code_id) values ($1,$2,$3,$4,$5,$6,$7,$8)`, [
+        r.id, l.line_no, l.description, l.quantity ?? null, l.unit, l.kind, i++, main,
       ]);
     }
     await c.query(`update project set stage_id = (select id from stage where code = 'rfp'), last_activity_at = now()
@@ -97,6 +101,7 @@ const LineInput = z.object({
   quantity: z.coerce.number().positive().nullable().optional(),
   unit: z.string().trim().min(1).max(8),
   kind: z.enum(["base", "alternate", "allowance", "unit_price"]),
+  cost_code_id: z.string().uuid().nullable().optional(),
 });
 
 /** Step 4: the bid form. Every vendor prices the same lines. */
@@ -108,11 +113,14 @@ export async function saveBidForm(actor: Actor, number: string, rawLines: unknow
   return withTx(actor.userId, async (c) => {
     const r = await loadForEdit(c, actor, number);
     if (r.status !== "draft") throw new Error("Only a draft can be edited");
+    const main = (await c.query(
+      `select b.cost_code_id from budget_line b join cost_code cc on cc.id = b.cost_code_id
+        where b.project_id = $1 and cc.code not like '01-%' order by b.original_budget desc, cc.code limit 1`, [r.project_id])).rows[0]?.cost_code_id ?? null;
     await c.query(`delete from bid_form_line where rfp_id = $1`, [r.id]);
     let i = 0;
     for (const l of lines) {
-      await c.query(`insert into bid_form_line (rfp_id, line_no, description, quantity, unit, kind, sort_order) values ($1,$2,$3,$4,$5,$6,$7)`, [
-        r.id, l.line_no, l.description, l.quantity ?? null, l.unit, l.kind, i++,
+      await c.query(`insert into bid_form_line (rfp_id, line_no, description, quantity, unit, kind, sort_order, cost_code_id) values ($1,$2,$3,$4,$5,$6,$7,$8)`, [
+        r.id, l.line_no, l.description, l.quantity ?? null, l.unit, l.kind, i++, l.cost_code_id ?? main,
       ]);
     }
   });
@@ -178,7 +186,7 @@ export async function issueRfp(actor: Actor, number: string) {
   if (!data) throw new Error("RFP not found");
   const { rfp, lines, project } = data;
   if (rfp.status !== "approved") throw new Error("The RFP must be approved before it is issued");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = pacificDate();
   const docx = await buildRfpDocx({ rfp, lines, project });
   const xlsx = await buildBidFormXlsx({ rfp, lines, project });
   const a = await fileDocument(actor, { originalName: `${number}.docx`, content: docx, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", source: "generated" },

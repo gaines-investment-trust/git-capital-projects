@@ -1,3 +1,4 @@
+import { pacificDate } from "./time";
 /**
  * GIT naming convention (build prompt section 6). Pure functions, unit tested.
  */
@@ -138,8 +139,8 @@ export function docTypeToken(docType: string, qualifier?: string | number): stri
 }
 
 export function isoDate(d: Date | string): string {
-  const x = typeof d === "string" ? new Date(d) : d;
-  return x.toISOString().slice(0, 10);
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d; // already a calendar date
+  return pacificDate(typeof d === "string" ? new Date(d) : d);
 }
 
 export type FileNameInput = {

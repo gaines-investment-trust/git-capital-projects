@@ -6,6 +6,7 @@ import { requireActor, graphToken } from "@/auth";
 import * as rfps from "@/services/rfps";
 import * as vendors from "@/services/vendors";
 import { decide } from "@/services/approvals";
+import * as contracts from "@/services/contracts";
 import { pacificToIso } from "@/lib/time";
 
 export type FormState = { error?: string; ok?: string; detail?: string[] } | undefined;
@@ -15,7 +16,7 @@ const msg = (e: unknown) => (e instanceof z.ZodError ? e.issues.map((i) => `${i.
 export async function decideAction(_: FormState, fd: FormData): Promise<FormState> {
   const actor = await requireActor();
   try {
-    void rfps; // registers the RFP approval handlers
+    void rfps; void contracts; // register the RFP and award approval handlers
     const r = await decide(actor, { approvalId: fd.get("approvalId"), decision: fd.get("decision"), note: String(fd.get("note") ?? "") || undefined });
     // No refresh here: the card keeps showing the confirmation so the tap visibly registered.
     // Every page is rendered fresh on the next visit (force-dynamic).
@@ -160,9 +161,16 @@ export async function vendorPaperworkAction(_: FormState, fd: FormData): Promise
   const vendorId = String(fd.get("vendorId"));
   try {
     const kind = String(fd.get("kind"));
-    if (kind === "coi") await vendors.addCoi(actor, Object.fromEntries(fd));
-    else if (kind === "license") await vendors.addLicense(actor, Object.fromEntries(fd));
+    // Blank optional fields arrive as "" from the form; treat them as not given.
+    const fields = Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === "string" && v.trim() !== ""));
+    if (kind === "coi") await vendors.addCoi(actor, fields);
+    else if (kind === "license") await vendors.addLicense(actor, fields);
     else if (kind === "status") await vendors.setVendorStatus(actor, vendorId, String(fd.get("status")));
+    else if (kind === "w9") {
+      const f = fd.get("file");
+      if (!(f instanceof File) || f.size === 0) throw new Error("Choose the W-9 PDF");
+      await vendors.uploadVendorDoc(actor, vendorId, "W9", { name: f.name, content: Buffer.from(await f.arrayBuffer()), contentType: f.type });
+    }
     revalidatePath(`/vendors/${vendorId}`);
     return { ok: "Saved" };
   } catch (e) {
